@@ -19,6 +19,7 @@ module Test.Webdriver.Auth.Internal
 import Test.WebDriver.Class
 import Test.WebDriver.JSON
 import Test.WebDriver.Session
+import Test.WebDriver.Config
 
 import Network.HTTP.Client (httpLbs, Request(..), RequestBody(..), Response(..))
 import Network.HTTP.Types.Header
@@ -56,8 +57,6 @@ import           Control.Monad.State.Strict   (MonadState, StateT, evalStateT,
 import qualified Control.Monad.State.Strict   as S
 import           Control.Monad.Trans.Control  (MonadBaseControl (..), StM)
 
-import           Test.WebDriver.Class
-import           Test.WebDriver.Session
 
 
 

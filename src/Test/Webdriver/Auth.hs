@@ -17,7 +17,9 @@ import           Control.Monad.State.Strict   (MonadState, StateT, evalStateT,
 import qualified Control.Monad.State.Strict   as S
 import           Control.Monad.Trans.Control  (MonadBaseControl (..), StM)
 
+import           Test.WebDriver
 import           Test.WebDriver.Class
+import           Test.WebDriver.Config
 import           Test.WebDriver.Session
 
 import           Data.Aeson
@@ -45,6 +47,7 @@ import           Control.Monad.Base
 import           Data.Typeable                (Typeable)
 import           Data.Word                    (Word, Word8)
 
+import           Network.HTTP.Client
 import           Test.Webdriver.Auth.Internal
 
 
@@ -83,3 +86,12 @@ instance WebDriver WDAuth where
 
 getApplyAuth :: WDAuth (Request -> Request)
 getApplyAuth = WDAuth $ S.StateT (\v@(_, addAuth) -> return (addAuth, v))
+
+
+runWDAuthWith :: BS.ByteString -> BS.ByteString -> WDConfig -> WDAuth a -> IO a
+runWDAuthWith user pass conf wd = do
+  sess <- mkSession conf
+  runWDAuth user pass sess wd
+
+runWDAuth :: BS.ByteString -> BS.ByteString -> WDSession -> WDAuth a -> IO a
+runWDAuth user pass sess (WDAuth wd) = evalStateT wd (sess, applyBasicAuth user pass)
