@@ -1,4 +1,4 @@
-Name:                   webdriver-authentication
+Name:                   saucelabs-webdriver
 Version:                0.0.0
 Author:                 Kevin Cotrone <kevincotrone@gmail.com>
 Maintainer:             Kevin Cotrone <kevincotrone@gmail.com>
@@ -17,8 +17,9 @@ Library
   Exposed-Modules:      Test.Webdriver.Auth
   Other-Modules:        Test.Webdriver.Auth.Internal
   Build-Depends:        base >= 4 && < 5
-                      , webdriver
+                      , webdriver == 0.6.1.7569
                       , http-client
+                      , http-conduit == 2.1.5
                       , mtl
                       , exceptions
                       , transformers-base
@@ -31,6 +32,8 @@ Library
                       , text
                       , base64-bytestring
                       , data-default
+                      , resourcet == 1.1.5
+                      , either-unwrap == 1.1
 
 Test-Suite spec
   Type:                 exitcode-stdio-1.0
