@@ -29,12 +29,9 @@ import           Test.WebDriver.Session
 
 import           Data.Aeson
 import           Data.Aeson.Types             (Parser, typeMismatch)
-
 import           Network.HTTP.Types           (methodPut)
 import           Network.HTTP.Types.Header
-import           Network.HTTP.Types.Status    (Status (..))
 
-import qualified Data.ByteString.Base64.Lazy  as B64
 import qualified Data.ByteString.Char8        as BS
 import           Data.ByteString.Lazy.Char8   (ByteString)
 import           Data.ByteString.Lazy.Char8   as LBS (fromStrict, length, null,
@@ -59,16 +56,12 @@ import qualified Network.HTTP.Conduit         as HC
 
 import qualified Test.Webdriver.Auth.Internal as IN
 
-
-
 newtype WDAuth a = WDAuth {
   unWDAuth :: StateT (WDSession, Request -> Request) IO a
 } deriving (Functor, Applicative, Monad, MonadIO, MonadThrow, MonadCatch)
 
-
 instance MonadBase IO WDAuth where
   liftBase = WDAuth . liftBase
-
 
 instance MonadBaseControl IO WDAuth where
   type StM WDAuth a = StM (StateT (WDSession, Request -> Request) IO) a

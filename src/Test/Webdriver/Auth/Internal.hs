@@ -1,5 +1,8 @@
-{-# LANGUAGE FlexibleContexts, OverloadedStrings, DeriveDataTypeable,
-             RecordWildCards, ScopedTypeVariables #-}
+{-# LANGUAGE DeriveDataTypeable  #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 -- |The HTTP/JSON plumbing used to implement the 'WD' monad.
 --
@@ -16,49 +19,44 @@ module Test.Webdriver.Auth.Internal
        , FailedCommand(..), failedCommand, mkFailedCommandInfo
        , FailedCommandType(..), FailedCommandInfo(..), StackFrame(..)
        ) where
-import Test.WebDriver.Class
-import Test.WebDriver.JSON
-import Test.WebDriver.Session
-import Test.WebDriver.Config
+import           Test.WebDriver.Class
+import           Test.WebDriver.Config
+import           Test.WebDriver.JSON
+import           Test.WebDriver.Session
 
-import Network.HTTP.Client (httpLbs, Request(..), RequestBody(..), Response(..))
-import Network.HTTP.Types.Header
-import Network.HTTP.Types.Status (Status(..))
-import Data.Aeson
-import Data.Aeson.Types (Parser, typeMismatch)
+import           Data.Aeson
+import           Data.Aeson.Types            (Parser, typeMismatch)
+import           Network.HTTP.Client         (Request (..), RequestBody (..),
+                                              Response (..), httpLbs)
+import           Network.HTTP.Types.Header
+import           Network.HTTP.Types.Status   (Status (..))
 
-import Data.Text as T (Text, splitOn, null)
-import qualified Data.Text.Encoding as TE
-import qualified Data.Text.Lazy.Encoding as TLE
-import Data.ByteString.Lazy.Char8 (ByteString)
-import Data.ByteString.Lazy.Char8 as LBS (length, unpack, null, fromStrict)
-import qualified Data.ByteString.Char8 as BS
 import qualified Data.ByteString.Base64.Lazy as B64
+import qualified Data.ByteString.Char8       as BS
+import           Data.ByteString.Lazy.Char8  (ByteString)
+import           Data.ByteString.Lazy.Char8  as LBS (fromStrict, length, null,
+                                                     unpack)
+import           Data.Text                   as T (Text, null, splitOn)
+import qualified Data.Text.Encoding          as TE
+import qualified Data.Text.Lazy.Encoding     as TLE
 
 
-import Control.Monad.Base
-import Control.Exception.Lifted (throwIO)
-import Control.Applicative
-import Control.Exception (SomeException, toException)
-
-import Control.Exception (Exception)
-import Data.Typeable (Typeable)
-import Data.Maybe (fromMaybe)
-import Data.String (fromString)
-import Data.Word (Word, Word8)
-import Data.Default
+import           Control.Applicative
+import           Control.Exception           (Exception, SomeException,
+                                              toException)
+import           Control.Monad.Base
+import           Data.Default
+import           Data.Maybe                  (fromMaybe)
+import           Data.String                 (fromString)
+import           Data.Typeable               (Typeable)
+import           Data.Word                   (Word, Word8)
 
 
 import           Control.Exception.Lifted
-import           Control.Monad.Catch          (MonadCatch, MonadThrow)
 import           Control.Monad.Reader
-import           Control.Monad.State.Strict   (MonadState, StateT, evalStateT,
-                                               get, put)
-import qualified Control.Monad.State.Strict   as S
-import           Control.Monad.Trans.Control  (MonadBaseControl (..), StM)
-
-
-
+import           Control.Monad.State.Strict  (MonadState, StateT, evalStateT,
+                                              get, put)
+import qualified Control.Monad.State.Strict  as S
 
 
 -- |Constructs an HTTP 'Request' value when given a list of headers, HTTP request method, and URL fragment
@@ -84,10 +82,10 @@ sendHTTPRequest :: (WDSessionState s) => Request -> s (Response ByteString)
 sendHTTPRequest req = do
   s@WDSession{..} <- getSession
   res <- liftBase $ httpLbs req wdSessHTTPManager
-  putSession s {wdSessHist = wdSessHistUpdate (req, res) wdSessHist} 
+  putSession s {wdSessHist = wdSessHistUpdate (req, res) wdSessHist}
   return res
-  
- 
+
+
 -- |Parses a 'WDResponse' object from a given HTTP response.
 getJSONResult :: (WDSessionState s, FromJSON a) => Response ByteString -> s (Either SomeException a)
 getJSONResult r
@@ -96,19 +94,19 @@ getJSONResult r
     lastReq <- lastHTTPRequest <$> getSession
     returnErr . UnknownCommand . maybe reason show $ lastReq
   --server-side errors
-  | code >= 500 && code < 600 = 
+  | code >= 500 && code < 600 =
     case lookup hContentType headers of
       Just ct
         | "application/json" `BS.isInfixOf` ct ->
-          parseJSON' 
+          parseJSON'
             (maybe body LBS.fromStrict $ lookup "X-Response-Body-Start" headers)
           >>= handleJSONErr
           >>= maybe noReturn returnErr
-        | otherwise -> 
+        | otherwise ->
           returnHTTPErr ServerError
       Nothing ->
         returnHTTPErr (ServerError . ("HTTP response missing content type. Server reason was: "++))
-  --redirect case (used as a response to createSession requests) 
+  --redirect case (used as a response to createSession requests)
   | code == 302 || code == 303 =
     case lookup hLocation headers of
       Nothing ->  returnErr . HTTPStatusUnknown code $ LBS.unpack body
@@ -119,14 +117,14 @@ getJSONResult r
   -- No Content response
   | code == 204 = noReturn
   -- HTTP Success
-  | code >= 200 && code < 300 = 
+  | code >= 200 && code < 300 =
     if LBS.null body
       then noReturn
       else do
-        rsp@WDResponse {rspVal = val} <- parseJSON' body  
-        handleJSONErr rsp >>= maybe  
+        rsp@WDResponse {rspVal = val} <- parseJSON' body
+        handleJSONErr rsp >>= maybe
           (handleRespSessionId rsp >> Right <$> fromJSON' val)
-          returnErr 
+          returnErr
   -- other status codes: return error
   | otherwise = returnHTTPErr (HTTPStatusUnknown code)
   where
@@ -138,8 +136,8 @@ getJSONResult r
     --HTTP response variables
     code = statusCode status
     reason = BS.unpack $ statusMessage status
-    status = responseStatus r  
-    body = responseBody r  
+    status = responseStatus r
+    body = responseBody r
     headers = responseHeaders r
 
 handleRespSessionId :: (WDSessionState s) => WDResponse -> s ()
@@ -152,7 +150,7 @@ handleRespSessionId WDResponse{rspSessId = sessId'} = do
        (_, Just False) -> throwIO . ServerError $ "Server response session ID (" ++ show sessId'
                                  ++ ") does not match local session ID (" ++ show sessId ++ ")"
        _ ->  return ()
-    
+
 handleJSONErr :: (WDSessionState s) => WDResponse -> s (Maybe SomeException)
 handleJSONErr WDResponse{rspStatus = 0} = return Nothing
 handleJSONErr WDResponse{rspVal = val, rspStatus = status} = do
@@ -192,7 +190,7 @@ handleJSONErr WDResponse{rspVal = val, rspStatus = status} = do
 
 
 -- |Internal type representing the JSON response object
-data WDResponse = WDResponse { 
+data WDResponse = WDResponse {
                                rspSessId :: Maybe SessionId
                              , rspStatus :: Word8
                              , rspVal    :: Value
@@ -271,7 +269,7 @@ data FailedCommandInfo =
                       errMsg    :: String
                       -- |The session associated with
                       -- the exception.
-                    , errSess :: Maybe WDSession
+                    , errSess   :: Maybe WDSession
                       -- |A screen shot of the focused window
                       -- when the exception occured,
                       -- if provided.
@@ -308,7 +306,7 @@ instance Show FailedCommandInfo where
 mkFailedCommandInfo :: (WDSessionState s) => String -> s FailedCommandInfo
 mkFailedCommandInfo m = do
   sess <- getSession
-  return $ FailedCommandInfo { errMsg = m 
+  return $ FailedCommandInfo { errMsg = m
                              , errSess = Just sess
                              , errScreen = Nothing
                              , errClass = Nothing
