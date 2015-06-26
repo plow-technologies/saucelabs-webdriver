@@ -4,8 +4,8 @@ Author:                 Kevin Cotrone <kevincotrone@gmail.com>
 Maintainer:             Kevin Cotrone <kevincotrone@gmail.com>
 License:                BSD3
 License-File:           LICENSE
--- Synopsis:               
--- Description:            
+Synopsis:               Haskell Webdriver compatible with SauceLabs  
+Description:            Webdriver command functions, functions for connecting/communicating with SauceLabs
 Cabal-Version:          >= 1.10
 Build-Type:             Simple
 Extra-Source-Files:     README.md, ChangeLog.md
