@@ -46,7 +46,7 @@ Test-Suite spec
   Main-Is:              Spec.hs
   Build-Depends:        base
                       , hspec
-
-Source-Repository head
-  Type:                 git
---  Location:             
+        
+source-repository head
+  type: git
+  location: git://github.com/plow-technologies/saucelabs-webdriver.git
