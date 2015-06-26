@@ -15,6 +15,10 @@ Library
   HS-Source-Dirs:       src
   GHC-Options:          -Wall
   Exposed-Modules:      Test.Webdriver.Auth
+                        Test.Webdriver.WaitCommands
+                        Test.Webdriver.InputCommands
+                        Test.Webdriver.Tests                      
+
   Other-Modules:        Test.Webdriver.Auth.Internal
   Build-Depends:        base >= 4 && < 5
                       , webdriver == 0.6.1.7569

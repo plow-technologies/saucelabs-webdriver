@@ -39,7 +39,6 @@ import qualified Data.ByteString.Char8        as BS
 import           Data.ByteString.Lazy.Char8   (ByteString)
 import           Data.ByteString.Lazy.Char8   as LBS (fromStrict, length, null,
                                                       pack, unpack)
-import           Data.Either.Unwrap           (fromRight)
 import qualified Data.Maybe                   as DM
 import           Data.Text                    as T (Text, breakOn, null,
                                                     splitOn)
@@ -91,11 +90,6 @@ instance WebDriver WDAuth where
     >>= IN.sendHTTPRequest
     >>= IN.getJSONResult
     >>= either throwIO return
-
---Roughly the same as the function in Data.Either.Unwrap also called fromRight
--- fromRight :: Either e a -> a
--- fromRight (Right a) = a
--- fromRight (Left _) = error "Either of type Left, not Right"
 
 --Roughly the same as the function in Data.Either.Unwrap also called fromRight
 --With added error handling for incorrect jobId format
@@ -153,44 +147,28 @@ sendFailed user pswd = runResourceT $ do
       body = BS.pack "{\"passed\": false}"
       contentHeader = [(hContentType, (BS.pack "application/json"))]
 
-
---Default session configuration for pointing to Sauce Labs, the brwsr argument allows you
---to choose which browser to run the test in from the main function.
+--Default session configuration for pointing to Sauce Labs, the brwsr and version
+--arguments allow you to choose which browser to run the test in from the main function.
 --Accepted browser arguments include chrome, firefox, and ie
-sauceConfig :: Browser -> WDConfig
-sauceConfig brwsr = defaultConfig { wdPort = 4444
-                                  , wdHost = "ondemand.saucelabs.com"
-                                  , wdCapabilities = defaultCaps {browser = brwsr}
-                                  }
+--versions are Ints, think ie 9, chrome 43, firefox 38
+sauceConfig :: Browser -> Int -> WDConfig
+sauceConfig brwsr vers = defaultConfig { wdHost = "ondemand.saucelabs.com"
+                                       , wdCapabilities = defaultCaps { browser = brwsr
+                                                                      , version = Just $ show vers
+                                                                      }
+                                       }
 
 getApplyAuth :: WDAuth (Request -> Request)
 getApplyAuth = WDAuth $ S.StateT (\v@(_, addAuth) -> return (addAuth, v))
-
-runWDAuthWith :: Browser -> BS.ByteString -> BS.ByteString -> WDAuth a -> IO a
-runWDAuthWith brwsr user pass wd = do
-  sess <- mkSession $ sauceConfig brwsr
-  runWDAuth user pass sess $ createSession (wdRequestHeaders $ sauceConfig brwsr) (wdCapabilities $ sauceConfig brwsr) >> wd
 
 runWDAuth :: BS.ByteString -> BS.ByteString -> WDSession -> WDAuth a -> IO a
 runWDAuth user pass sess (WDAuth wd)
   = evalStateT wd (sess, applyBasicAuth user pass)
 
-main :: Browser -> String -> String -> IO ()
-main brwsr user pswd = do
-  rslt <- runWDAuthWith brwsr (BS.pack user) (BS.pack pswd) $ checkPassed user pswd loginTest
-  print $ fromRight rslt
-
---Tests that users can log onto staging using Persona
-loginTest :: WDAuth (Either IN.FailedCommand Text)
-loginTest = do
-  setImplicitWait 8000
-  openPage "https://staging.plowtech.net/auth/login"
-  persona  <- waitForPopupWindow $ findClick (ByCSS "a[href='javascript:hident2()']")
-  emailBox <- checkLastCommand persona $ findFill (ByCSS "input[id='authentication_email']") "plowtech@plowtech.net"
-  nextB    <- checkLastCommand emailBox $ findClick (ByCSS "button[class='isDesktop isStart isAddressInfo']")
-  passBox  <- checkLastCommand nextB $ findFill (ByCSS "input[id='authentication_password']") "plowtech"
-  signIn   <- waitForWindowClose $ checkLastCommand passBox (findClick (ByCSS "button[class='isReturning isTransitionToSecondary']"))
-  return signIn
+runWDAuthWith :: Browser -> Int -> BS.ByteString -> BS.ByteString -> WDAuth a -> IO a
+runWDAuthWith brwsr vers user pass wd = do
+  sess <- mkSession $ sauceConfig brwsr vers
+  runWDAuth user pass sess $ createSession (wdRequestHeaders $ sauceConfig brwsr vers) (wdCapabilities $ sauceConfig brwsr vers) >> wd
 
 --Checks that the lastResult is good, sends a pass/fail to SauceLabs,
 --and closes the session. Called inside the Main function.
@@ -206,79 +184,3 @@ checkPassed user pswd test = do
                   closeSession
                   return $ Right "Test Successful"
 
---This function chains sequential commands together based on the result of the last command.
---If last command failed, it returns the Exception of the previous command.
---If last command succeeded, returns the result of running the next command and so on.
-checkLastCommand :: Either IN.FailedCommand Text
-                 -> WDAuth (Either IN.FailedCommand Text) -> WDAuth (Either IN.FailedCommand Text)
-checkLastCommand lastResult nextCommand = do
-  case lastResult of
-    Left e  -> do return $ Left (e :: IN.FailedCommand)
-
-    Right _ -> do rslt <- nextCommand
-                  return rslt
-
---Find a form element and fill it with text
---Throws error if the element isn't found
-findFill ::Selector -> Text -> WDAuth (Either IN.FailedCommand Text)
-findFill selector keys = do
-  form <- try $ waitUntilFound selector
-  case form of
-    Left e              -> do return $ Left (e :: IN.FailedCommand)
-
-    Right (Element txt) -> do sendKeys keys (fromRight form)
-                              return $ Right txt
-
---Find a button element and click on it
---Throws error if the element isn't found
-findClick :: Selector -> WDAuth (Either IN.FailedCommand Text)
-findClick selector = do
-  button <- try $ waitUntilFound selector
-  case button of
-   Left e              -> do return $ Left (e :: IN.FailedCommand)
-
-   Right (Element txt) -> do click $ fromRight button
-                             return $ Right txt
-
---Similar to the same function found in /onping/tests/Selenium/WaitCommands.hs
---Also very similar to the findElem function in Test.WebDriver.Commands.Wait
-waitUntilFound :: Selector -> WDAuth (Element)
-waitUntilFound selector = do
-  waitUntil 5000.0 $ do
-    expectation <- catch (findElem selector >> return True)
-                         (\(FailedCommand _ _) -> return False)
-    expect expectation
-  findElem selector
-
---Similar to the same function found in /onping/tests/Selenium/WaitCommands.hs
---Should precede a command that opens a new window.
---If the command succeeds, it focuses on the popup window.
-waitForPopupWindow :: WDAuth (Either IN.FailedCommand Text) -> WDAuth (Either IN.FailedCommand Text)
-waitForPopupWindow popupInitiator = do
-   oldWindow <- getCurrentWindow
-   rslt <- popupInitiator
-   case rslt of
-     Left _  -> do return rslt
-
-     Right _ -> do waitUntil 5.0 (expect (oldWindow /= currentWindow))
-                   windowList <- windows
-                   let newWindow  = head $ filter (/= oldWindow) windowList
-                   focusWindow newWindow
-                   return rslt
-
---Similar to the same function found in /onping/tests/Selenium/WaitCommands.hs
---Should precede a command that closes a window.
---If the command succeeds, it focuses on the remaining window after the first closes.
-waitForWindowClose :: WDAuth (Either IN.FailedCommand Text) -> WDAuth (Either IN.FailedCommand Text)
-waitForWindowClose closeAction = do
-   oldNumWindows <- Prelude.length `liftM`  windows
-   rslt <- closeAction
-   case rslt of
-     Left _  -> do return rslt
-
-     Right _ -> do waitUntil 4000.0 $ do
-                     newNumWindows <- Prelude.length `liftM` windows
-                     expect (oldNumWindows > newNumWindows)
-                   newWindowList <- windows
-                   focusWindow (head newWindowList)
-                   return rslt
