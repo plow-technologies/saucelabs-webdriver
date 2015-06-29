@@ -1,5 +1,5 @@
 Name:                   saucelabs-webdriver
-Version:                0.1.0
+Version:                0.2.0
 Author:                 Kevin Cotrone <kevincotrone@gmail.com>
 Maintainer:             Kevin Cotrone <kevincotrone@gmail.com>
 License:                BSD3
@@ -21,9 +21,9 @@ Library
 
   Other-Modules:        Test.Webdriver.Auth.Internal
   Build-Depends:        base >= 4 && < 5
-                      , webdriver == 0.6.1.7569
+                      , webdriver == 0.6.2.7569
                       , http-client
-                      , http-conduit == 2.1.5
+                      , http-conduit >= 1.9
                       , mtl
                       , exceptions
                       , transformers-base
