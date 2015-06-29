@@ -1,5 +1,5 @@
 Name:                   saucelabs-webdriver
-Version:                0.0.0
+Version:                0.1.0
 Author:                 Kevin Cotrone <kevincotrone@gmail.com>
 Maintainer:             Kevin Cotrone <kevincotrone@gmail.com>
 License:                BSD3
@@ -35,7 +35,7 @@ Library
                       , text
                       , base64-bytestring
                       , data-default
-                      , resourcet == 1.1.5
+                      , resourcet >= 1.1.4.1
                       , either-unwrap == 1.1
 
 Test-Suite spec
