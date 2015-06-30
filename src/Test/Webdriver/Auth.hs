@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP                        #-}
 {-# LANGUAGE DeriveDataTypeable         #-}
 {-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
@@ -17,7 +18,7 @@ import           Control.Monad.Reader
 import           Control.Monad.State.Strict   (MonadState, StateT, evalStateT,
                                                get, put)
 import qualified Control.Monad.State.Strict   as S
-import           Control.Monad.Trans.Control  (MonadBaseControl (..), StM)
+import           Control.Monad.Trans.Control
 
 import           Test.WebDriver
 import           Test.WebDriver.Capabilities  (defaultCaps)
@@ -54,23 +55,32 @@ import           Data.Word                    (Word, Word8)
 import           Network.HTTP.Client
 import qualified Network.HTTP.Conduit         as HC
 
+import           Data.Either.Unwrap           (fromRight)
 import qualified Test.Webdriver.Auth.Internal as IN
 
 newtype WDAuth a = WDAuth {
-  unWDAuth :: StateT (WDSession, Request -> Request) IO a
-} deriving (Functor, Applicative, Monad, MonadIO, MonadThrow, MonadCatch)
+   unWDAuth :: StateT (WDSession, Request -> Request) IO a
+   } deriving (Functor, Applicative, Monad, MonadIO, MonadThrow, MonadCatch)
+
+-- newtype WDAuth a = WDAuth (StateT (WDSession, Request -> Request) IO a)
+--     deriving (Functor, Applicative, Monad, MonadIO, MonadThrow, MonadCatch)
 
 instance MonadBase IO WDAuth where
   liftBase = WDAuth . liftBase
 
 instance MonadBaseControl IO WDAuth where
-  type StM WDAuth a = StM (StateT (WDSession, Request -> Request) IO) a
+  newtype StM (WDAuth) a = ST {unST :: StM (StateT (WDSession, Request -> Request) IO) a}
+  liftBaseWith f = WDAuth . liftBaseWith $ \runInBase ->
+        f $ (liftM ST . runInBase . unWDAuth)
+  restoreM = WDAuth . restoreM . unST
 
-  liftBaseWith f = WDAuth $
-    liftBaseWith $ \runInBase ->
-    f (\(WDAuth sT) -> runInBase $ sT)
-
-  restoreM = WDAuth . restoreM
+--This is the newer way of writing a MonadBaseControl instance
+--instance MonadBaseControl IO WDAuth where
+  -- type StM WDAuth a = StM (StateT (WDSession, Request -> Request) IO) a
+  -- liftBaseWith f = WDAuth $
+  --   liftBaseWith $ \runInBase ->
+  --   f $ (\(WDAuth sT) -> runInBase $ sT)
+  -- restoreM = WDAuth . restoreM
 
 instance WDSessionState WDAuth where
   getSession = WDAuth $ S.StateT (\v@(sess, _) -> return (sess,v))
@@ -176,4 +186,3 @@ checkPassed user pswd test = do
     Right _ -> do _ <- liftIO $ sendPassed user pswd
                   closeSession
                   return $ Right "Test Successful"
-
