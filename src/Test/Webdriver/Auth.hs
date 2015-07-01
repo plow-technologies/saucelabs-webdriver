@@ -11,8 +11,6 @@
 
 module Test.Webdriver.Auth where
 
-import           Control.Applicative
-import           Control.Exception.Lifted
 import           Control.Monad.Catch          (MonadCatch, MonadThrow)
 import           Control.Monad.Reader
 import           Control.Monad.State.Strict   (MonadState, StateT, evalStateT,
@@ -45,7 +43,7 @@ import qualified Data.Text.Lazy.Encoding      as TLE
 
 import           Control.Applicative
 import           Control.Exception            (SomeException, toException)
-import           Control.Exception.Lifted     (throwIO)
+import           Control.Exception.Lifted
 import           Control.Monad.Base
 import           Control.Monad.Trans.Resource (ResourceT, runResourceT)
 
@@ -68,20 +66,22 @@ newtype WDAuth a = WDAuth {
 instance MonadBase IO WDAuth where
   liftBase = WDAuth . liftBase
 
-instance MonadBaseControl IO WDAuth where
-  newtype StM (WDAuth) a = ST {unST :: StM (StateT (WDSession, Request -> Request) IO) a}
-  liftBaseWith f = WDAuth . liftBaseWith $ \runInBase ->
-        f $ (liftM ST . runInBase . unWDAuth)
-  restoreM = WDAuth . restoreM . unST
+#if MIN_VERSION_monad_control(1,0,0)
 
 --This is the newer way of writing a MonadBaseControl instance
---instance MonadBaseControl IO WDAuth where
-  -- type StM WDAuth a = StM (StateT (WDSession, Request -> Request) IO) a
-  -- liftBaseWith f = WDAuth $
-  --   liftBaseWith $ \runInBase ->
-  --   f $ (\(WDAuth sT) -> runInBase $ sT)
-  -- restoreM = WDAuth . restoreM
-
+instance MonadBaseControl IO WDAuth where
+  type StM WDAuth a = StM (StateT (WDSession, Request -> Request) IO) a
+  liftBaseWith f = WDAuth $
+    liftBaseWith $ \runInBase ->
+    f $ (\(WDAuth sT) -> runInBase $ sT)
+  restoreM = WDAuth . restoreM
+#else
+instance MonadBaseControl IO WDAuth where
+  newtype StM WDAuth a = ST {unST :: StM (StateT (WDSession, Request -> Request) IO) a}
+  liftBaseWith f = WDAuth . liftBaseWith $ \runInBase ->
+        f (liftM ST . runInBase . unWDAuth)
+  restoreM = WDAuth . restoreM . unST
+#endif
 instance WDSessionState WDAuth where
   getSession = WDAuth $ S.StateT (\v@(sess, _) -> return (sess,v))
   putSession session = WDAuth $ S.StateT (\(_,addAuth) -> return ( () , (session, addAuth) ) )
