@@ -174,7 +174,7 @@ runWDAuthWith brwsr vers user pass wd = do
   runWDAuth user pass sess $ createSession (wdRequestHeaders $ sauceConfig brwsr vers) (wdCapabilities $ sauceConfig brwsr vers) >> wd
 
 --Checks that the lastResult is good, sends a pass/fail to SauceLabs,
---and closes the session. Called inside the Main function.
+--and closes the session.
 checkPassed :: String -> String -> WDAuth (Either IN.FailedCommand Text) -> WDAuth (Either IN.FailedCommand Text)
 checkPassed user pswd test = do
   lastResult <- test
