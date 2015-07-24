@@ -103,7 +103,7 @@ jobIdFromRight (Left _) = error "Bad Job Id format"
 --Queries SauceLabs for the most recent Job Id
 getJobId :: String -> String -> IO (Either HttpException (Response ByteString))
 getJobId user pswd = runResourceT $ do
-    tReq <- liftIO $ HC.parseUrl ("https://saucelabs.com/rest/v1/msewell17/jobs?limit=1")
+    tReq <- liftIO $ HC.parseUrl ("https://saucelabs.com/rest/v1/" ++ user ++ "/jobs?limit=1")
     let req = applyBasicAuth (BS.pack user) (BS.pack pswd) $ tReq {HC.method = methodGet, HC.requestBody = HC.RequestBodyBS body}
     resp <- liftIO $ try (HC.withManager ( HC.httpLbs req)) :: ResourceT IO (Either HC.HttpException (HC.Response ByteString))
     return resp
@@ -130,7 +130,7 @@ checkJobIdFormat input
 sendPassed :: String -> String ->  IO (Either HttpException (Response ByteString))
 sendPassed user pswd = runResourceT $ do
     jobIdString <- liftIO $ getJobIdString user pswd
-    tReq <- liftIO $ HC.parseUrl ("https://saucelabs.com/rest/v1/msewell17/jobs/" ++ (jobIdFromRight jobIdString))
+    tReq <- liftIO $ HC.parseUrl ("https://saucelabs.com/rest/v1/" ++ user ++ "/jobs/" ++ (jobIdFromRight jobIdString))
     let req = applyBasicAuth (BS.pack user) (BS.pack pswd) $ tReq {HC.method = methodPut, HC.requestHeaders = contentHeader, HC.requestBody = HC.RequestBodyBS body}
     resp <- liftIO $ try (HC.withManager ( HC.httpLbs req)) :: ResourceT IO (Either HC.HttpException (HC.Response ByteString))
     return resp
@@ -142,7 +142,7 @@ sendPassed user pswd = runResourceT $ do
 sendFailed :: String -> String -> IO (Either HttpException (Response ByteString))
 sendFailed user pswd = runResourceT $ do
     jobIdString <- liftIO $ getJobIdString user pswd
-    tReq <- liftIO $ HC.parseUrl ("https://saucelabs.com/rest/v1/msewell17/jobs/" ++ (jobIdFromRight jobIdString))
+    tReq <- liftIO $ HC.parseUrl ("https://saucelabs.com/rest/v1/" ++ user ++ "/jobs/" ++ (jobIdFromRight jobIdString))
     let req = applyBasicAuth (BS.pack user) (BS.pack pswd) $ tReq {HC.method = methodPut, HC.requestHeaders = contentHeader, HC.requestBody = HC.RequestBodyBS body}
     resp <- liftIO $ try (HC.withManager ( HC.httpLbs req)) :: ResourceT IO (Either HC.HttpException (HC.Response ByteString))
     return resp
