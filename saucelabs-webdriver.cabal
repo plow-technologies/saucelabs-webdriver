@@ -21,11 +21,7 @@ Library
                         Test.Webdriver.Auth.Internal              
 
   Build-Depends:        base >= 4 && < 5
-<<<<<<< HEAD
                       , webdriver
-=======
-                      , webdriver == 0.6.4.7569
->>>>>>> d6807675527d572a824ee74178f93efc1a30ba32
                       , http-client
                       , http-conduit >= 1.9
                       , mtl
