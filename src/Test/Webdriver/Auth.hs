@@ -158,6 +158,7 @@ sauceConfig :: Browser -> Int -> WDConfig
 sauceConfig brwsr vers = defaultConfig { wdHost = "ondemand.saucelabs.com"
                                        , wdCapabilities = defaultCaps { browser = brwsr
                                                                       , version = Just $ show vers
+                                                                      , platform = Windows
                                                                       }
                                        }
 
