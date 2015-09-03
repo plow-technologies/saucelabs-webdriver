@@ -19,7 +19,7 @@ import qualified Control.Monad.State.Strict   as S
 import           Control.Monad.Trans.Control
 
 import           Test.WebDriver
-import           Test.WebDriver.Capabilities  (defaultCaps)
+import qualified Test.WebDriver.Capabilities  as WD (defaultCaps, proxy)
 import           Test.WebDriver.Class
 import           Test.WebDriver.Commands.Wait
 import           Test.WebDriver.Config        (defaultConfig, mkSession)
@@ -27,14 +27,16 @@ import           Test.WebDriver.JSON          (single)
 import           Test.WebDriver.Session
 
 import           Data.Aeson
-import           Data.Aeson.Types             (Parser, typeMismatch)
+import           Data.Aeson.Types             (Pair, Parser, emptyObject,
+                                               typeMismatch)
 import           Network.HTTP.Types           (methodPut)
 import           Network.HTTP.Types.Header
 
 import qualified Data.ByteString.Char8        as BS
 import           Data.ByteString.Lazy.Char8   (ByteString)
-import           Data.ByteString.Lazy.Char8   as LBS (fromStrict, length, null,
-                                                      pack, unpack)
+import           Data.ByteString.Lazy.Char8   as LBS (append, fromStrict,
+                                                      length, null, pack,
+                                                      unpack)
 import qualified Data.Maybe                   as DM
 import           Data.Text                    as T (Text, breakOn, null,
                                                     splitOn)
@@ -150,29 +152,54 @@ sendFailed user pswd = runResourceT $ do
       body = BS.pack "{\"passed\": false}"
       contentHeader = [(hContentType, (BS.pack "application/json"))]
 
+--Sends a job name to the most recent Job on SauceLabs
+sendName :: String -> String -> String -> IO (Either HttpException (Response ByteString))
+sendName name user pswd = runResourceT $ do
+    jobIdString <- liftIO $ getJobIdString user pswd
+    tReq <- liftIO $ HC.parseUrl ("https://saucelabs.com/rest/v1/" ++ user ++ "/jobs/" ++ (jobIdFromRight jobIdString))
+    let req = applyBasicAuth (BS.pack user) (BS.pack pswd) $ tReq {HC.method = methodPut, HC.requestHeaders = contentHeader, HC.requestBody = HC.RequestBodyBS body}
+    resp <- liftIO $ try (HC.withManager ( HC.httpLbs req)) :: ResourceT IO (Either HC.HttpException (HC.Response ByteString))
+    return resp
+    where
+      body = BS.pack $ "{\"name\": \"" ++ name ++ "\"}"
+      contentHeader = [(hContentType, (BS.pack "application/json"))]
+
 --Default session configuration for pointing to Sauce Labs, the brwsr and version
 --arguments allow you to choose which browser to run the test in from the main function.
 --Accepted browser arguments include chrome, firefox, and ie
 --versions are Ints, think ie 9, chrome 43, firefox 38
-sauceConfig :: Browser -> Int -> WDConfig
-sauceConfig brwsr vers = defaultConfig { wdHost = "ondemand.saucelabs.com"
-                                       , wdCapabilities = defaultCaps { browser = brwsr
+sauceConfig :: Browser -> Int -> Text -> WDConfig
+sauceConfig brwsr vers name = defaultConfig { wdHost = "ondemand.saucelabs.com"
+                                    , wdCapabilities = WD.defaultCaps { browser = brwsr
                                                                       , version = Just $ show vers
                                                                       , platform = Vista
+                                                                      , additionalCaps = [ avoidProxy
+                                                                                         , setName name
+                                                                                         , setTeam
+                                                                                         ]
                                                                       }
-                                       }
+                                    }
+
+avoidProxy :: Pair
+avoidProxy = ("avoidProxy", Bool True)
+
+setTeam :: Pair
+setTeam = ("public", String "team")
+
+setName :: Text -> Pair
+setName name = ("name", String name)
 
 getApplyAuth :: WDAuth (Request -> Request)
 getApplyAuth = WDAuth $ S.StateT (\v@(_, addAuth) -> return (addAuth, v))
 
 runWDAuth :: BS.ByteString -> BS.ByteString -> WDSession -> WDAuth a -> IO a
-runWDAuth user pass sess (WDAuth wd)
-  = evalStateT wd (sess, applyBasicAuth user pass)
+runWDAuth user pass sess (WDAuth wd) = do
+  evalStateT wd (sess, applyBasicAuth user pass)
 
-runWDAuthWith :: Browser -> Int -> BS.ByteString -> BS.ByteString -> WDAuth a -> IO a
-runWDAuthWith brwsr vers user pass wd = do
-  sess <- mkSession $ sauceConfig brwsr vers
-  runWDAuth user pass sess $ createSession (wdRequestHeaders $ sauceConfig brwsr vers) (wdCapabilities $ sauceConfig brwsr vers) >> wd
+runWDAuthWith :: Browser -> Int -> Text -> BS.ByteString -> BS.ByteString -> WDAuth a -> IO a
+runWDAuthWith brwsr vers name user pass wd = do
+  sess <- mkSession $ sauceConfig brwsr vers name
+  runWDAuth user pass sess $ createSession (wdRequestHeaders $ sauceConfig brwsr vers name) (wdCapabilities $ sauceConfig brwsr vers name) >> wd
 
 --Checks that the lastResult is good, sends a pass/fail to SauceLabs,
 --and closes the session.
