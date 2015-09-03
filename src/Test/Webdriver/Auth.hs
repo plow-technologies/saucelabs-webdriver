@@ -176,6 +176,7 @@ sauceConfig brwsr vers name = defaultConfig { wdHost = "ondemand.saucelabs.com"
                                                                       , additionalCaps = [ avoidProxy
                                                                                          , setName name
                                                                                          , setTeam
+                                                                                         , ieDriverVersion
                                                                                          ]
                                                                       }
                                     }
@@ -188,6 +189,9 @@ setTeam = ("public", String "team")
 
 setName :: Text -> Pair
 setName name = ("name", String name)
+
+ieDriverVersion :: Pair
+ieDriverVersion = ("iedriverVersion", String "2.47.0")
 
 getApplyAuth :: WDAuth (Request -> Request)
 getApplyAuth = WDAuth $ S.StateT (\v@(_, addAuth) -> return (addAuth, v))
