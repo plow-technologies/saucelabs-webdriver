@@ -111,7 +111,7 @@ data Job = Job {name :: Text, jobId :: Text} deriving (Show, Eq)
 --Queries SauceLabs for the most recent Job Id
 getJobs :: String -> String -> IO (Either HttpException (Response ByteString))
 getJobs user pswd = runResourceT $ do
-    tReq <- liftIO $ HC.parseUrl ("https://saucelabs.com/rest/v1/" ++ user ++ "/jobs?limit=6&full=:get_full_info")
+    tReq <- liftIO $ HC.parseUrl ("https://saucelabs.com/rest/v1/" ++ user ++ "/jobs?limit=5&full=:get_full_info")
     let req = applyBasicAuth (BS.pack user) (BS.pack pswd) $ tReq {HC.method = methodGet, HC.requestBody = HC.RequestBodyBS body}
     resp <- liftIO $ try (HC.withManager ( HC.httpLbs req)) :: ResourceT IO (Either HC.HttpException (HC.Response ByteString))
     return resp
@@ -131,14 +131,16 @@ getJobIdStringByName user pswd testName = do
       case value of
         Nothing  -> return $ Left "Failed to decode HTTP response"
         Just val -> do 
-          let jobs = mapNamesToJobIds $ val
-              jobId = (M.lookup (T.pack testName) jobs) :: Maybe Text
+          let (jobMap, jobList) = mapNamesToJobIds $ val
+              jobId = (M.lookup (T.pack testName) jobMap) :: Maybe Text
+          --putStrLn $ show jobMap
+          --putStrLn $ show jobList
           case jobId of
             Nothing -> return $ Left "Failed to find job id by name"
             Just txt -> return $ Right $ T.unpack txt
 
-mapNamesToJobIds :: Value -> M.Map Text Text
-mapNamesToJobIds v = M.fromList testNames
+mapNamesToJobIds :: Value -> (M.Map Text Text, [(Text, Text)])
+mapNamesToJobIds v = (M.fromList $ reverse testNames, testNames)
   where
     testNames = v ^.. values.runFold (buildJob <$> 
                                          (Fold (key "name" . _String)) <*>
