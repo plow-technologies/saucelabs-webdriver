@@ -111,7 +111,7 @@ data Job = Job {name :: Text, jobId :: Text} deriving (Show, Eq)
 --Queries SauceLabs for the most recent Job Id
 getJobs :: String -> String -> IO (Either HttpException (Response ByteString))
 getJobs user pswd = runResourceT $ do
-    tReq <- liftIO $ HC.parseUrl ("https://saucelabs.com/rest/v1/" ++ user ++ "/jobs?limit=5&full=:get_full_info")
+    tReq <- liftIO $ HC.parseUrl ("https://saucelabs.com/rest/v1/" ++ user ++ "/jobs?limit=10&full=:get_full_info")
     let req = applyBasicAuth (BS.pack user) (BS.pack pswd) $ tReq {HC.method = methodGet, HC.requestBody = HC.RequestBodyBS body}
     resp <- liftIO $ try (HC.withManager ( HC.httpLbs req)) :: ResourceT IO (Either HC.HttpException (HC.Response ByteString))
     return resp
