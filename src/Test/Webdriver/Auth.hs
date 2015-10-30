@@ -100,12 +100,6 @@ instance WebDriver WDAuth where
     >>= IN.getJSONResult
     >>= either throwIO return
 
---Roughly the same as the function in Data.Either.Unwrap also called fromRight
---With added error handling for incorrect jobId format
-jobIdFromRight :: Either e a -> a
-jobIdFromRight (Right a) = a
-jobIdFromRight (Left _) = error "Bad Job Id format"
-
 data Job = Job {name :: Text, jobId :: Text} deriving (Show, Eq)
 
 --Queries SauceLabs for the most recent Job Id
@@ -182,27 +176,29 @@ sendFailed user pswd testName = runResourceT $ do
 --Accepted browser arguments include chrome, firefox, and ie
 --versions are Ints, think ie 9, chrome 43, firefox 38
 sauceConfig :: Browser -> Int -> Text -> WDConfig
-sauceConfig brwsr vers name = defaultConfig { wdHost = "ondemand.saucelabs.com"
+sauceConfig brwsr vers testName =
+                      defaultConfig { wdHost = "ondemand.saucelabs.com"
                                     , wdCapabilities = WD.defaultCaps { browser = brwsr
-                                                                      , version = Just $ show vers
                                                                       , platform = Vista
-                                                                      , additionalCaps = [ setName name
+                                                                      , additionalCaps = [ setName testName
                                                                                          , setTeam
                                                                                          ]
                                                                       }
                                     }
+ffDriverVersion:: Pair
+ffDriverVersion = ("seleniumVersion", String "2.48.2")
 
-avoidProxy :: Pair
-avoidProxy = ("avoidProxy", Bool True)
+chrDriverVersion:: Pair
+chrDriverVersion = ("chromedriverVersion", String "2.20")
+
+ieDriverVersion :: Pair
+ieDriverVersion = ("iedriverVersion", String "2.48.0")
 
 setTeam :: Pair
 setTeam = ("public", String "team")
 
 setName :: Text -> Pair
 setName name = ("name", String name)
-
-ieDriverVersion :: Pair
-ieDriverVersion = ("iedriverVersion", String "2.47.0")
 
 getApplyAuth :: WDAuth (Request -> Request)
 getApplyAuth = WDAuth $ S.StateT (\v@(_, addAuth) -> return (addAuth, v))
