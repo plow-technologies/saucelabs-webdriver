@@ -179,6 +179,7 @@ sauceConfig :: Browser -> Int -> Text -> WDConfig
 sauceConfig brwsr vers testName =
                       defaultConfig { wdHost = "ondemand.saucelabs.com"
                                     , wdCapabilities = WD.defaultCaps { browser = brwsr
+                                                                      , version = Just $ show vers
                                                                       , platform = Vista
                                                                       , additionalCaps = [ setName testName
                                                                                          , setTeam
