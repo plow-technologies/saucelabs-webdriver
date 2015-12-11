@@ -102,7 +102,7 @@ instance WebDriver WDAuth where
 
 data Job = Job {name :: Text, jobId :: Text} deriving (Show, Eq)
 
---Queries SauceLabs for the most recent Job Id
+
 getJobs :: String -> String -> IO (Either HttpException (Response ByteString))
 getJobs user pswd = runResourceT $ do
     tReq <- liftIO $ HC.parseUrl ("https://saucelabs.com/rest/v1/" ++ user ++ "/jobs?limit=10&full=:get_full_info")

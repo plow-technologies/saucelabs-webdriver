@@ -19,25 +19,3 @@ checkLastCommand lastResult nextCommand = do
 
     Right _ -> do rslt <- nextCommand
                   return rslt
-
---Find a form element and fill it with text
---Throws error if the element isn't found
-findFill ::Selector -> Text -> WDAuth (Either IN.FailedCommand Text)
-findFill selector keys = do
-  form <- try $ waitUntilFound selector
-  case form of
-    Left e              -> do return $ Left (e :: IN.FailedCommand)
-
-    Right (Element txt) -> do sendKeys keys (fromRight form)
-                              return $ Right txt
-
---Find a button element and click on it
---Throws error if the element isn't found
-findClick :: Selector -> WDAuth (Either IN.FailedCommand Text)
-findClick selector = do
-  button <- try $ waitUntilFound selector
-  case button of
-   Left e              -> do return $ Left (e :: IN.FailedCommand)
-
-   Right (Element txt) -> do click $ fromRight button
-                             return $ Right txt
