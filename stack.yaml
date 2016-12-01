@@ -1,0 +1,12 @@
+flags: {}
+packages:
+- '.'
+- location:
+    git: git@github.com:plow-technologies/hs-webdriver.git
+    commit: 09ec21e66918dad9567fe01d291ea729a8706b34
+  subdirs: []
+  extra-dep: true
+extra-deps:
+- cond-0.4.1.1
+- webdriver-0.6.4.7569
+resolver: lts-7.4
