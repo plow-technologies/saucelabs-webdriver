@@ -48,6 +48,7 @@ Test-Suite spec
                       , test
   Ghc-Options:          -Wall
   Main-Is:              Spec.hs
+  Other-Modules:        Test.Webdriver.AuthSpec
   Build-Depends:        base
                       , hspec
         
