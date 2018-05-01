@@ -19,6 +19,7 @@ module Test.Webdriver.Auth.Internal
        , FailedCommand(..), failedCommand, mkFailedCommandInfo
        , FailedCommandType(..), FailedCommandInfo(..), StackFrame(..)
        ) where
+import           Control.Monad.Trans.Control (MonadBaseControl)
 import           Test.WebDriver.Class
 import           Test.WebDriver.Config
 import           Test.WebDriver.JSON
@@ -27,7 +28,7 @@ import           Test.WebDriver.Session
 import           Data.Aeson
 import           Data.Aeson.Types            (Parser, typeMismatch)
 import           Network.HTTP.Client         (Request (..), RequestBody (..),
-                                              Response (..), httpLbs)
+                                              Response (..), httpLbs, defaultRequest)
 import           Network.HTTP.Types.Header
 import           Network.HTTP.Types.Status   (Status (..))
 
@@ -67,31 +68,31 @@ mkRequestWith  applyAuth headers meth wdPath args = do
   let body = case toJSON args of
         Null  -> ""   --passing Null as the argument indicates no request body
         other -> encode other
-  return $ applyAuth $ def { host = wdSessHost
+  return $ applyAuth $ defaultRequest
+             { host = wdSessHost
              , port = wdSessPort
              , path = wdSessBasePath `BS.append`  TE.encodeUtf8 wdPath
              , requestBody = RequestBodyLBS body
              , requestHeaders = headers ++ [ (hAccept, "application/json;charset=UTF-8")
                                            , (hContentType, "application/json;charset=UTF-8")
                                            , (hContentLength, fromString . show . LBS.length $ body) ]
-             , checkStatus = \_ _ _ -> Nothing -- all status codes handled by getJSONResult
              , method = meth }
 
 -- |Sends an HTTP request to the remote WebDriver server
-sendHTTPRequest :: (WDSessionState s) => Request -> s (Response ByteString)
+sendHTTPRequest :: (WDSessionState s, MonadBase IO s) => Request -> s (Response ByteString)
 sendHTTPRequest req = do
   s@WDSession{..} <- getSession
   res <- liftBase $ httpLbs req wdSessHTTPManager
-  putSession s {wdSessHist = wdSessHistUpdate (req, res) wdSessHist}
+  putSession s {wdSessHist = wdSessHistUpdate (SessionHistory req (Right res) 1) wdSessHist}
   return res
 
 
 -- |Parses a 'WDResponse' object from a given HTTP response.
-getJSONResult :: (WDSessionState s, FromJSON a) => Response ByteString -> s (Either SomeException a)
+getJSONResult :: (WDSessionState s, FromJSON a, MonadBaseControl IO s) => Response ByteString -> s (Either SomeException a)
 getJSONResult r
   --malformed request errors
   | code >= 400 && code < 500 = do
-    lastReq <- lastHTTPRequest <$> getSession
+    lastReq <- mostRecentHTTPRequest <$> getSession
     returnErr . UnknownCommand . maybe reason show $ lastReq
   --server-side errors
   | code >= 500 && code < 600 =
@@ -140,7 +141,7 @@ getJSONResult r
     body = responseBody r
     headers = responseHeaders r
 
-handleRespSessionId :: (WDSessionState s) => WDResponse -> s ()
+handleRespSessionId :: (WDSessionState s, MonadBase IO s) => WDResponse -> s ()
 handleRespSessionId WDResponse{rspSessId = sessId'} = do
     sess@WDSession { wdSessId = sessId} <- getSession
     case (sessId, (==) <$> sessId <*> sessId') of
@@ -151,7 +152,7 @@ handleRespSessionId WDResponse{rspSessId = sessId'} = do
                                  ++ ") does not match local session ID (" ++ show sessId ++ ")"
        _ ->  return ()
 
-handleJSONErr :: (WDSessionState s) => WDResponse -> s (Maybe SomeException)
+handleJSONErr :: (WDSessionState s, MonadBaseControl IO s) => WDResponse -> s (Maybe SomeException)
 handleJSONErr WDResponse{rspStatus = 0} = return Nothing
 handleJSONErr WDResponse{rspVal = val, rspStatus = status} = do
   sess <- getSession
@@ -314,7 +315,7 @@ mkFailedCommandInfo m = do
 
 -- |Convenience function to throw a 'FailedCommand' locally with no server-side
 -- info present.
-failedCommand :: (WDSessionState s) => FailedCommandType -> String -> s a
+failedCommand :: (WDSessionState s, MonadBase IO s) => FailedCommandType -> String -> s a
 failedCommand t m = throwIO . FailedCommand t =<< mkFailedCommandInfo m
 
 -- |An individual stack frame from the stack trace provided by the server

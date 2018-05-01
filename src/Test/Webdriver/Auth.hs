@@ -61,6 +61,7 @@ import           Control.Lens hiding ((.=))
 import qualified Control.Lens.Reified as RG
 import           Data.Aeson.Lens
 import qualified Data.Map.Strict as M
+import           Data.Default
 
 newtype WDAuth a = WDAuth {
    unWDAuth :: StateT (WDSession, Request -> Request) IO a
@@ -93,9 +94,9 @@ instance WDSessionState WDAuth where
   putSession session = WDAuth $ S.StateT (\(_,addAuth) -> return ( () , (session, addAuth) ) )
 
 instance WebDriver WDAuth where
-  doCommand headers method path args = do
+  doCommand method path args = do
     applyAuth <- getApplyAuth
-    IN.mkRequestWith applyAuth headers method path args
+    IN.mkRequestWith applyAuth [] method path args
     >>= IN.sendHTTPRequest
     >>= IN.getJSONResult
     >>= either throwIO return
@@ -103,19 +104,19 @@ instance WebDriver WDAuth where
 data Job = Job {name :: Text, jobId :: Text} deriving (Show, Eq)
 
 
-getJobs :: String -> String -> IO (Either HttpException (Response ByteString))
-getJobs user pswd = runResourceT $ do
+getJobs :: Manager -> String -> String -> IO (Either HttpException (Response ByteString))
+getJobs manager user pswd = runResourceT $ do
     tReq <- liftIO $ HC.parseUrl ("https://saucelabs.com/rest/v1/" ++ user ++ "/jobs?limit=10&full=:get_full_info")
     let req = applyBasicAuth (BS.pack user) (BS.pack pswd) $ tReq {HC.method = methodGet, HC.requestBody = HC.RequestBodyBS body}
-    resp <- liftIO $ try (HC.withManager ( HC.httpLbs req)) :: ResourceT IO (Either HC.HttpException (HC.Response ByteString))
+    resp <- liftIO $ try ( HC.httpLbs req manager) :: ResourceT IO (Either HC.HttpException (HC.Response ByteString))
     return resp
     where
       body = BS.pack "" --Empty request body for GET request
 
 --Turns the Job Id response into a String, checking to make sure getJobId returned a Right Response ByteString
-getJobIdStringByName :: String -> String -> String -> IO (Either String String)
-getJobIdStringByName user pswd testName = do
-  rslt <- getJobs user pswd
+getJobIdStringByName :: Manager -> String -> String -> String -> IO (Either String String)
+getJobIdStringByName manager user pswd testName = do
+  rslt <- getJobs manager user pswd
   case rslt of
     Left e     -> return $ Left $ show e
           
@@ -142,30 +143,30 @@ mapNamesToJobIds v = (M.fromList $ reverse testNames, testNames)
     buildJob n k = (n, k)                                        
 
 --Sends a Passed status to the job with the same test name on SauceLabs
-sendPassed :: String -> String -> String -> IO (Either HttpException (Response ByteString))
-sendPassed user pswd testName = runResourceT $ do
-    mjobIdString <- liftIO $ getJobIdStringByName user pswd testName
+sendPassed :: Manager -> String -> String -> String -> IO (Either HttpException (Response ByteString))
+sendPassed manager user pswd testName = runResourceT $ do
+    mjobIdString <- liftIO $ getJobIdStringByName manager user pswd testName
     case mjobIdString of
       Left txt          -> error txt
       Right jobIdString -> do
         tReq <- liftIO $ HC.parseUrl ("https://saucelabs.com/rest/v1/" ++ user ++ "/jobs/" ++ jobIdString)
         let req = applyBasicAuth (BS.pack user) (BS.pack pswd) $ tReq {HC.method = methodPut, HC.requestHeaders = contentHeader, HC.requestBody = HC.RequestBodyBS body}
-        resp <- liftIO $ try (HC.withManager ( HC.httpLbs req)) :: ResourceT IO (Either HC.HttpException (HC.Response ByteString))
+        resp <- liftIO $ try (HC.httpLbs req manager) :: ResourceT IO (Either HC.HttpException (HC.Response ByteString))
         return resp
         where
           body = BS.pack "{\"passed\": true}"
           contentHeader = [(hContentType, (BS.pack "application/json"))]
 
 --Sends a Failed status to the Job based on the test name on SauceLabs
-sendFailed :: String -> String -> String -> IO (Either HttpException (Response ByteString))
-sendFailed user pswd testName = runResourceT $ do
-    mjobIdString <- liftIO $ getJobIdStringByName user pswd testName
+sendFailed :: Manager -> String -> String -> String -> IO (Either HttpException (Response ByteString))
+sendFailed manager user pswd testName = runResourceT $ do
+    mjobIdString <- liftIO $ getJobIdStringByName manager user pswd testName
     case mjobIdString of
       Left txt          -> error txt
       Right jobIdString -> do
         tReq <- liftIO $ HC.parseUrl ("https://saucelabs.com/rest/v1/" ++ user ++ "/jobs/" ++ jobIdString)
         let req = applyBasicAuth (BS.pack user) (BS.pack pswd) $ tReq {HC.method = methodPut, HC.requestHeaders = contentHeader, HC.requestBody = HC.RequestBodyBS body}
-        resp <- liftIO $ try (HC.withManager ( HC.httpLbs req)) :: ResourceT IO (Either HC.HttpException (HC.Response ByteString))
+        resp <- liftIO $ try (HC.httpLbs req manager) :: ResourceT IO (Either HC.HttpException (HC.Response ByteString))
         return resp
     where
       body = BS.pack "{\"passed\": false}"
@@ -211,15 +212,15 @@ runWDAuth user pass sess (WDAuth wd) = do
 runWDAuthWith :: Browser -> Int -> Text -> BS.ByteString -> BS.ByteString -> WDAuth a -> IO a
 runWDAuthWith brwsr vers name user pass wd = do
   sess <- mkSession $ sauceConfig brwsr vers name
-  runWDAuth user pass sess $ createSession (wdRequestHeaders $ sauceConfig brwsr vers name) (wdCapabilities $ sauceConfig brwsr vers name) >> wd
+  runWDAuth user pass sess $ createSession (wdCapabilities $ sauceConfig brwsr vers name) >> wd
 
 --Checks that the lastResult is good, sends a pass/fail to SauceLabs,
 --and closes the session.
-checkPassed :: String -> String -> Either IN.FailedCommand Text -> String -> IO (Either IN.FailedCommand Text)
-checkPassed user pswd lastResult testName =
+checkPassed :: Manager -> String -> String -> Either IN.FailedCommand Text -> String -> IO (Either IN.FailedCommand Text)
+checkPassed manager user pswd lastResult testName =
   case lastResult of
-    Left e  -> do _ <- sendFailed user pswd testName
+    Left e  -> do _ <- sendFailed manager user pswd testName
                   return $ Left (e :: IN.FailedCommand)
 
-    Right _ -> do _ <- sendPassed user pswd testName
+    Right _ -> do _ <- sendPassed manager user pswd testName
                   return $ Right "Test Successful"
