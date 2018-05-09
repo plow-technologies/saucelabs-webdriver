@@ -1,12 +1,8 @@
 module Test.Webdriver.InputCommands where
 
-import           Control.Monad.Catch
-import           Data.Either.Unwrap           (fromRight)
 import           Data.Text
-import           Test.WebDriver
 import           Test.Webdriver.Auth
 import qualified Test.Webdriver.Auth.Internal as IN
-import           Test.Webdriver.WaitCommands
 
 --This function chains sequential commands together based on the result of the last command.
 --If last command failed, it returns the Exception of the previous command.

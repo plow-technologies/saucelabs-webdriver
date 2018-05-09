@@ -14,7 +14,7 @@ Extra-Source-Files:     README.md, ChangeLog.md
 Library
   Default-Language:     Haskell2010
   HS-Source-Dirs:       src
-  GHC-Options:          -Wall
+  GHC-Options:          -Wall -Werror
   Exposed-Modules:      Test.Webdriver.Auth
                         Test.Webdriver.WaitCommands
                         Test.Webdriver.InputCommands
@@ -46,7 +46,7 @@ Test-Suite spec
   Default-Language:     Haskell2010
   Hs-Source-Dirs:       src
                       , test
-  Ghc-Options:          -Wall
+  Ghc-Options:          -Wall -Werror
   Main-Is:              Spec.hs
   Other-Modules:        Test.Webdriver.AuthSpec
   Build-Depends:        base

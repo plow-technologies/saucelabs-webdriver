@@ -21,7 +21,6 @@ module Test.Webdriver.Auth.Internal
        ) where
 import           Control.Monad.Trans.Control (MonadBaseControl)
 import           Test.WebDriver.Class
-import           Test.WebDriver.Config
 import           Test.WebDriver.JSON
 import           Test.WebDriver.Session
 
@@ -42,11 +41,9 @@ import qualified Data.Text.Encoding          as TE
 import qualified Data.Text.Lazy.Encoding     as TLE
 
 
-import           Control.Applicative
 import           Control.Exception           (Exception, SomeException,
                                               toException)
 import           Control.Monad.Base
-import           Data.Default
 import           Data.Maybe                  (fromMaybe)
 import           Data.String                 (fromString)
 import           Data.Typeable               (Typeable)
@@ -54,10 +51,6 @@ import           Data.Word                   (Word, Word8)
 
 
 import           Control.Exception.Lifted
-import           Control.Monad.Reader
-import           Control.Monad.State.Strict  (MonadState, StateT, evalStateT,
-                                              get, put)
-import qualified Control.Monad.State.Strict  as S
 
 
 -- |Constructs an HTTP 'Request' value when given a list of headers, HTTP request method, and URL fragment
@@ -102,7 +95,7 @@ getJSONResult r
           parseJSON'
             (maybe body LBS.fromStrict $ lookup "X-Response-Body-Start" headers)
           >>= handleJSONErr
-          >>= maybe noReturn returnErr
+          >>= maybe noReturnRight returnErr
         | otherwise ->
           returnHTTPErr ServerError
       Nothing ->
@@ -114,13 +107,13 @@ getJSONResult r
       Just loc -> do
         let sessId = last . filter (not . T.null) . splitOn "/" . fromString $ BS.unpack loc
         modifySession $ \sess -> sess {wdSessId = Just (SessionId sessId)}
-        noReturn
+        noReturnRight
   -- No Content response
-  | code == 204 = noReturn
+  | code == 204 = noReturnRight
   -- HTTP Success
   | code >= 200 && code < 300 =
     if LBS.null body
-      then noReturn
+      then noReturnRight
       else do
         rsp@WDResponse {rspVal = val} <- parseJSON' body
         handleJSONErr rsp >>= maybe
@@ -133,7 +126,7 @@ getJSONResult r
     returnErr :: (Exception e, Monad m) => e -> m (Either SomeException a)
     returnErr = return . Left . toException
     returnHTTPErr errType = returnErr . errType $ reason
-    noReturn = Right <$> fromJSON' Null
+    noReturnRight = Right <$> fromJSON' Null
     --HTTP response variables
     code = statusCode status
     reason = BS.unpack $ statusMessage status
