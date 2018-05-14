@@ -7,7 +7,6 @@ import           Data.Text                    hiding (filter, head, length,
 import           Test.WebDriver
 import           Test.Webdriver.Auth
 import qualified Test.Webdriver.Auth.Internal as IN
-import           Test.WebDriver.Commands
 import           Test.WebDriver.Commands.Wait
 
 

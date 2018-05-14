@@ -13,52 +13,34 @@ module Test.Webdriver.Auth where
 
 import           Control.Monad.Catch          (MonadCatch, MonadThrow)
 import           Control.Monad.Reader
-import           Control.Monad.State.Strict   (MonadState, StateT, evalStateT,
-                                               get, put)
+import           Control.Monad.State.Strict   (StateT, evalStateT)
 import qualified Control.Monad.State.Strict   as S
 import           Control.Monad.Trans.Control
 
 import           Test.WebDriver
-import qualified Test.WebDriver.Capabilities  as WD (defaultCaps, proxy)
+import qualified Test.WebDriver.Capabilities  as WD (defaultCaps)
 import           Test.WebDriver.Class
-import           Test.WebDriver.Commands.Wait
 import           Test.WebDriver.Config        (defaultConfig, mkSession)
-import           Test.WebDriver.JSON          (single)
 import           Test.WebDriver.Session
 
 import           Data.Aeson
-import           Data.Aeson.Types             (Pair, Parser, emptyObject,
-                                               typeMismatch)
+import           Data.Aeson.Types             (Pair)
 import           Network.HTTP.Types           (methodPut)
 import           Network.HTTP.Types.Header
 
 import qualified Data.ByteString.Char8        as BS
 import           Data.ByteString.Lazy.Char8   (ByteString)
-import           Data.ByteString.Lazy.Char8   as LBS (append, fromStrict,
-                                                      length, null, pack,
-                                                      unpack)
-import qualified Data.Maybe                   as DM
-import           Data.Text                    as T (Text, breakOn, null,
-                                                    splitOn, pack, unpack)
-import qualified Data.Text.Encoding           as TE
-import qualified Data.Text.Lazy.Encoding      as TLE
+import           Data.Text                    as T (Text, pack, unpack)
 
-import           Control.Applicative hiding (empty)
-import           Control.Exception            (SomeException, toException)
 import           Control.Exception.Lifted
 import           Control.Monad.Base
 import           Control.Monad.Trans.Resource (ResourceT, runResourceT)
 
-import           Data.Typeable                (Typeable)
-import           Data.Word                    (Word, Word8)
-
 import           Network.HTTP.Client
 import qualified Network.HTTP.Conduit         as HC
 
-import           Data.Either.Unwrap           (fromRight)
 import qualified Test.Webdriver.Auth.Internal as IN
 import           Control.Lens hiding ((.=))
-import qualified Control.Lens.Reified as RG
 import           Data.Aeson.Lens
 import qualified Data.Map.Strict as M
 
@@ -93,9 +75,9 @@ instance WDSessionState WDAuth where
   putSession session = WDAuth $ S.StateT (\(_,addAuth) -> return ( () , (session, addAuth) ) )
 
 instance WebDriver WDAuth where
-  doCommand headers method path args = do
+  doCommand method path args = do
     applyAuth <- getApplyAuth
-    IN.mkRequestWith applyAuth headers method path args
+    IN.mkRequestWith applyAuth [] method path args
     >>= IN.sendHTTPRequest
     >>= IN.getJSONResult
     >>= either throwIO return
@@ -105,9 +87,9 @@ data Job = Job {name :: Text, jobId :: Text} deriving (Show, Eq)
 
 getJobs :: String -> String -> IO (Either HttpException (Response ByteString))
 getJobs user pswd = runResourceT $ do
-    tReq <- liftIO $ HC.parseUrl ("https://saucelabs.com/rest/v1/" ++ user ++ "/jobs?limit=10&full=:get_full_info")
+    tReq <- liftIO $ HC.parseUrlThrow ("https://saucelabs.com/rest/v1/" ++ user ++ "/jobs?limit=10&full=:get_full_info")
     let req = applyBasicAuth (BS.pack user) (BS.pack pswd) $ tReq {HC.method = methodGet, HC.requestBody = HC.RequestBodyBS body}
-    resp <- liftIO $ try (HC.withManager ( HC.httpLbs req)) :: ResourceT IO (Either HC.HttpException (HC.Response ByteString))
+    resp <- liftIO $ try (newManager HC.tlsManagerSettings >>= HC.httpLbs req) :: ResourceT IO (Either HC.HttpException (HC.Response ByteString))
     return resp
     where
       body = BS.pack "" --Empty request body for GET request
@@ -125,7 +107,7 @@ getJobIdStringByName user pswd testName = do
       case value of
         Nothing  -> return $ Left "Failed to decode HTTP response"
         Just val -> do 
-          let (jobMap, jobList) = mapNamesToJobIds $ val
+          let (jobMap, _jobList) = mapNamesToJobIds $ val
               jobId = (M.lookup (T.pack testName) jobMap) :: Maybe Text
           --putStrLn $ show jobMap
           --putStrLn $ show jobList
@@ -148,9 +130,9 @@ sendPassed user pswd testName = runResourceT $ do
     case mjobIdString of
       Left txt          -> error txt
       Right jobIdString -> do
-        tReq <- liftIO $ HC.parseUrl ("https://saucelabs.com/rest/v1/" ++ user ++ "/jobs/" ++ jobIdString)
+        tReq <- liftIO $ HC.parseUrlThrow ("https://saucelabs.com/rest/v1/" ++ user ++ "/jobs/" ++ jobIdString)
         let req = applyBasicAuth (BS.pack user) (BS.pack pswd) $ tReq {HC.method = methodPut, HC.requestHeaders = contentHeader, HC.requestBody = HC.RequestBodyBS body}
-        resp <- liftIO $ try (HC.withManager ( HC.httpLbs req)) :: ResourceT IO (Either HC.HttpException (HC.Response ByteString))
+        resp <- liftIO $ try (newManager HC.tlsManagerSettings >>= HC.httpLbs req) :: ResourceT IO (Either HC.HttpException (HC.Response ByteString))
         return resp
         where
           body = BS.pack "{\"passed\": true}"
@@ -163,9 +145,9 @@ sendFailed user pswd testName = runResourceT $ do
     case mjobIdString of
       Left txt          -> error txt
       Right jobIdString -> do
-        tReq <- liftIO $ HC.parseUrl ("https://saucelabs.com/rest/v1/" ++ user ++ "/jobs/" ++ jobIdString)
+        tReq <- liftIO $ HC.parseUrlThrow ("https://saucelabs.com/rest/v1/" ++ user ++ "/jobs/" ++ jobIdString)
         let req = applyBasicAuth (BS.pack user) (BS.pack pswd) $ tReq {HC.method = methodPut, HC.requestHeaders = contentHeader, HC.requestBody = HC.RequestBodyBS body}
-        resp <- liftIO $ try (HC.withManager ( HC.httpLbs req)) :: ResourceT IO (Either HC.HttpException (HC.Response ByteString))
+        resp <- liftIO $ try (newManager HC.tlsManagerSettings >>= HC.httpLbs req) :: ResourceT IO (Either HC.HttpException (HC.Response ByteString))
         return resp
     where
       body = BS.pack "{\"passed\": false}"
@@ -211,7 +193,7 @@ runWDAuth user pass sess (WDAuth wd) = do
 runWDAuthWith :: Browser -> Int -> Text -> BS.ByteString -> BS.ByteString -> WDAuth a -> IO a
 runWDAuthWith brwsr vers name user pass wd = do
   sess <- mkSession $ sauceConfig brwsr vers name
-  runWDAuth user pass sess $ createSession (wdRequestHeaders $ sauceConfig brwsr vers name) (wdCapabilities $ sauceConfig brwsr vers name) >> wd
+  runWDAuth user pass sess $ createSession (wdCapabilities $ sauceConfig brwsr vers name) >> wd
 
 --Checks that the lastResult is good, sends a pass/fail to SauceLabs,
 --and closes the session.

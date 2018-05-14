@@ -19,15 +19,15 @@ module Test.Webdriver.Auth.Internal
        , FailedCommand(..), failedCommand, mkFailedCommandInfo
        , FailedCommandType(..), FailedCommandInfo(..), StackFrame(..)
        ) where
+import           Control.Monad.Trans.Control (MonadBaseControl)
 import           Test.WebDriver.Class
-import           Test.WebDriver.Config
 import           Test.WebDriver.JSON
 import           Test.WebDriver.Session
 
 import           Data.Aeson
 import           Data.Aeson.Types            (Parser, typeMismatch)
 import           Network.HTTP.Client         (Request (..), RequestBody (..),
-                                              Response (..), httpLbs)
+                                              Response (..), httpLbs, defaultRequest)
 import           Network.HTTP.Types.Header
 import           Network.HTTP.Types.Status   (Status (..))
 
@@ -41,11 +41,9 @@ import qualified Data.Text.Encoding          as TE
 import qualified Data.Text.Lazy.Encoding     as TLE
 
 
-import           Control.Applicative
 import           Control.Exception           (Exception, SomeException,
                                               toException)
 import           Control.Monad.Base
-import           Data.Default
 import           Data.Maybe                  (fromMaybe)
 import           Data.String                 (fromString)
 import           Data.Typeable               (Typeable)
@@ -53,10 +51,6 @@ import           Data.Word                   (Word, Word8)
 
 
 import           Control.Exception.Lifted
-import           Control.Monad.Reader
-import           Control.Monad.State.Strict  (MonadState, StateT, evalStateT,
-                                              get, put)
-import qualified Control.Monad.State.Strict  as S
 
 
 -- |Constructs an HTTP 'Request' value when given a list of headers, HTTP request method, and URL fragment
@@ -67,31 +61,31 @@ mkRequestWith  applyAuth headers meth wdPath args = do
   let body = case toJSON args of
         Null  -> ""   --passing Null as the argument indicates no request body
         other -> encode other
-  return $ applyAuth $ def { host = wdSessHost
+  return $ applyAuth $ defaultRequest
+             { host = wdSessHost
              , port = wdSessPort
              , path = wdSessBasePath `BS.append`  TE.encodeUtf8 wdPath
              , requestBody = RequestBodyLBS body
              , requestHeaders = headers ++ [ (hAccept, "application/json;charset=UTF-8")
                                            , (hContentType, "application/json;charset=UTF-8")
                                            , (hContentLength, fromString . show . LBS.length $ body) ]
-             , checkStatus = \_ _ _ -> Nothing -- all status codes handled by getJSONResult
              , method = meth }
 
 -- |Sends an HTTP request to the remote WebDriver server
-sendHTTPRequest :: (WDSessionState s) => Request -> s (Response ByteString)
+sendHTTPRequest :: (WDSessionState s, MonadBase IO s) => Request -> s (Response ByteString)
 sendHTTPRequest req = do
   s@WDSession{..} <- getSession
   res <- liftBase $ httpLbs req wdSessHTTPManager
-  putSession s {wdSessHist = wdSessHistUpdate (req, res) wdSessHist}
+  putSession s {wdSessHist = wdSessHistUpdate (SessionHistory req (Right res) 1) wdSessHist}
   return res
 
 
 -- |Parses a 'WDResponse' object from a given HTTP response.
-getJSONResult :: (WDSessionState s, FromJSON a) => Response ByteString -> s (Either SomeException a)
+getJSONResult :: (WDSessionState s, FromJSON a, MonadBaseControl IO s) => Response ByteString -> s (Either SomeException a)
 getJSONResult r
   --malformed request errors
   | code >= 400 && code < 500 = do
-    lastReq <- lastHTTPRequest <$> getSession
+    lastReq <- mostRecentHTTPRequest <$> getSession
     returnErr . UnknownCommand . maybe reason show $ lastReq
   --server-side errors
   | code >= 500 && code < 600 =
@@ -101,7 +95,7 @@ getJSONResult r
           parseJSON'
             (maybe body LBS.fromStrict $ lookup "X-Response-Body-Start" headers)
           >>= handleJSONErr
-          >>= maybe noReturn returnErr
+          >>= maybe noReturnRight returnErr
         | otherwise ->
           returnHTTPErr ServerError
       Nothing ->
@@ -113,13 +107,13 @@ getJSONResult r
       Just loc -> do
         let sessId = last . filter (not . T.null) . splitOn "/" . fromString $ BS.unpack loc
         modifySession $ \sess -> sess {wdSessId = Just (SessionId sessId)}
-        noReturn
+        noReturnRight
   -- No Content response
-  | code == 204 = noReturn
+  | code == 204 = noReturnRight
   -- HTTP Success
   | code >= 200 && code < 300 =
     if LBS.null body
-      then noReturn
+      then noReturnRight
       else do
         rsp@WDResponse {rspVal = val} <- parseJSON' body
         handleJSONErr rsp >>= maybe
@@ -132,7 +126,7 @@ getJSONResult r
     returnErr :: (Exception e, Monad m) => e -> m (Either SomeException a)
     returnErr = return . Left . toException
     returnHTTPErr errType = returnErr . errType $ reason
-    noReturn = Right <$> fromJSON' Null
+    noReturnRight = Right <$> fromJSON' Null
     --HTTP response variables
     code = statusCode status
     reason = BS.unpack $ statusMessage status
@@ -140,7 +134,7 @@ getJSONResult r
     body = responseBody r
     headers = responseHeaders r
 
-handleRespSessionId :: (WDSessionState s) => WDResponse -> s ()
+handleRespSessionId :: (WDSessionState s, MonadBase IO s) => WDResponse -> s ()
 handleRespSessionId WDResponse{rspSessId = sessId'} = do
     sess@WDSession { wdSessId = sessId} <- getSession
     case (sessId, (==) <$> sessId <*> sessId') of
@@ -151,7 +145,7 @@ handleRespSessionId WDResponse{rspSessId = sessId'} = do
                                  ++ ") does not match local session ID (" ++ show sessId ++ ")"
        _ ->  return ()
 
-handleJSONErr :: (WDSessionState s) => WDResponse -> s (Maybe SomeException)
+handleJSONErr :: (WDSessionState s, MonadBaseControl IO s) => WDResponse -> s (Maybe SomeException)
 handleJSONErr WDResponse{rspStatus = 0} = return Nothing
 handleJSONErr WDResponse{rspVal = val, rspStatus = status} = do
   sess <- getSession
@@ -314,7 +308,7 @@ mkFailedCommandInfo m = do
 
 -- |Convenience function to throw a 'FailedCommand' locally with no server-side
 -- info present.
-failedCommand :: (WDSessionState s) => FailedCommandType -> String -> s a
+failedCommand :: (WDSessionState s, MonadBase IO s) => FailedCommandType -> String -> s a
 failedCommand t m = throwIO . FailedCommand t =<< mkFailedCommandInfo m
 
 -- |An individual stack frame from the stack trace provided by the server
